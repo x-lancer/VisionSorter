@@ -22,12 +22,14 @@ const ParameterConfig: React.FC<ParameterConfigProps> = ({
   onStart,
 }) => {
   return (
-    <Card 
-      title="聚类参数设置" 
+    <Card
+      title="聚类参数设置"
       style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-      bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+      styles={{
+        body: { flex: 1, display: 'flex', flexDirection: 'column' },
+      }}
     >
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
+      <Space orientation="vertical" style={{ width: '100%' }} size="large">
         <div>
           <Text strong>图片目录路径：</Text>
           <Input

@@ -2,8 +2,8 @@
   "name": "visionsorter",
   "private": true,
   "scripts": {
-    "dev": "python3 scripts/dev.py",
-    "dev:server": "python3 src/server/main.py",
+    "dev": "python3.11 scripts/dev.py",
+    "dev:server": "python3.11 src/server/main.py",
     "dev:web": "npm --prefix src/web run dev"
   }
 }
