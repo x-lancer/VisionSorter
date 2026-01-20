@@ -36,10 +36,16 @@ const App: React.FC = () => {
   const [imageDir, setImageDir] = useState<string>('');
   const [nClusters, setNClusters] = useState<number>(5);
   const [activeResultTab, setActiveResultTab] = useState<string>('statistics');
+  const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
   const { loading, result, handleCluster } = useCluster();
 
   const onStart = () => {
     handleCluster(imageDir, nClusters);
+  };
+
+  const handleClusterSelectFromStatistics = (clusterId: number) => {
+    setActiveResultTab('clusters');
+    setActiveClusterId(String(clusterId));
   };
 
   return (
@@ -82,7 +88,10 @@ const App: React.FC = () => {
                       label: '结果统计',
                       children: (
                         <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
-                          <ResultStatistics result={result} />
+                          <ResultStatistics
+                            result={result}
+                            onClusterSelect={handleClusterSelectFromStatistics}
+                          />
                         </div>
                       ),
                     },
@@ -100,7 +109,11 @@ const App: React.FC = () => {
                       label: '分类详情',
                       children: (
                         <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
-                          <ClusterTabs clusters={result.clusters} />
+                          <ClusterTabs
+                            clusters={result.clusters}
+                            activeClusterId={activeClusterId || undefined}
+                            onActiveClusterChange={(id) => setActiveClusterId(id)}
+                          />
                         </div>
                       ),
                     },

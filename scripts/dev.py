@@ -42,6 +42,7 @@ def _find_python() -> str:
 
 def main() -> int:
     root = _repo_root()
+    web_dir = os.path.join(root, "src", "web")
 
     npm = _which("npm")
     if not npm:
@@ -51,7 +52,17 @@ def main() -> int:
     python = _find_python()
 
     server_cmd = [python, os.path.join(root, "src", "server", "main.py")]
-    web_cmd = [npm, "--prefix", os.path.join(root, "src", "web"), "run", "dev"]
+    web_cmd = [npm, "--prefix", web_dir, "run", "dev"]
+
+    # Ensure frontend deps exist (vite lives in node_modules/.bin)
+    node_modules_dir = os.path.join(web_dir, "node_modules")
+    if not os.path.isdir(node_modules_dir):
+        print("[dev] Frontend deps not found. Installing (npm install)...")
+        install_cmd = [npm, "--prefix", web_dir, "install"]
+        install_proc = subprocess.run(install_cmd, cwd=root)
+        if install_proc.returncode != 0:
+            print("[dev] ERROR: npm install failed. Fix it then re-run.", file=sys.stderr)
+            return install_proc.returncode
 
     print("[dev] Starting server:", " ".join(server_cmd))
     server_proc = subprocess.Popen(server_cmd, cwd=root)
