@@ -19,6 +19,8 @@ from utils.color_clustering import (
     cluster_images_by_color_de2000,
     calculate_inter_cluster_distance
 )
+from utils.db import init_db, insert_cluster_result
+import json
 
 
 app = FastAPI(
@@ -26,6 +28,9 @@ app = FastAPI(
     description="接收图片，计算中心区域的LAB颜色值，支持颜色聚类",
     version="1.0.0"
 )
+
+# 初始化 SQLite 数据库（如果不存在则创建）
+init_db()
 
 # 配置CORS，允许前端跨域访问
 app.add_middleware(
@@ -531,6 +536,52 @@ async def cluster_images(request: ClusterRequest):
                 for cluster_id, info in clusters.items()
             }
         }
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"聚类处理时发生错误: {str(e)}"
+        )
+
+
+class SaveClusterRequest(BaseModel):
+    """保存聚类结果到 SQLite 的请求模型"""
+    image_dir: str
+    n_clusters: int
+    result: dict
+
+
+@app.post("/api/save-cluster-result")
+async def save_cluster_result(request: SaveClusterRequest):
+    """
+    将前端当前展示的聚类结果保存到 SQLite。
+
+    说明：
+      - 由前端在“聚类完成后，用户点击保存按钮”时触发
+      - 仅在有有效结果时调用
+    """
+    try:
+        payload = request.result
+        inter_cluster_stats = payload.get("inter_cluster_stats", {})
+        total_images = int(payload.get("total_images", 0))
+
+        record_id = insert_cluster_result(
+            image_dir=request.image_dir,
+            n_clusters=request.n_clusters,
+            total_images=total_images,
+            inter_cluster_stats=inter_cluster_stats,
+            payload_json=json.dumps(payload, ensure_ascii=False),
+        )
+
+        return {
+            "success": True,
+            "id": record_id,
+            "message": "聚类结果已保存到本地数据库（SQLite）"
+        }
         
         return response
         
@@ -539,7 +590,7 @@ async def cluster_images(request: ClusterRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"聚类处理时发生错误: {str(e)}"
+            detail=f"保存聚类结果时发生错误: {str(e)}"
         )
 
 

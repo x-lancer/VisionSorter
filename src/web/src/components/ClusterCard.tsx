@@ -19,7 +19,7 @@ const ClusterCard: React.FC<ClusterCardProps> = ({ cluster }) => {
             {/* 基准LAB值 */}
             <div>
               <Divider orientation="left">基准LAB值</Divider>
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <Text>
                   L: <Text strong>{cluster.lab_mean[0].toFixed(2)}</Text>
                   <Text type="secondary">（±{cluster.lab_std[0].toFixed(2)}）</Text>
@@ -38,7 +38,7 @@ const ClusterCard: React.FC<ClusterCardProps> = ({ cluster }) => {
             {/* 与基准的误差 */}
             <div>
               <Divider orientation="left">与基准的误差</Divider>
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <Text>
                   平均: <Text strong>{cluster.de2000_mean.toFixed(2)}</Text>
                 </Text>
@@ -54,7 +54,7 @@ const ClusterCard: React.FC<ClusterCardProps> = ({ cluster }) => {
             {/* 样本间的误差 */}
             <div>
               <Divider orientation="left">样本间的误差</Divider>
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <Text>
                   平均: <Text strong>{cluster.de2000_intra_mean.toFixed(2)}</Text>
                 </Text>
