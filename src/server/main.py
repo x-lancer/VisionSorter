@@ -47,15 +47,18 @@ if getattr(sys, 'frozen', False):
     # 打包环境：PyInstaller 会将数据文件解压到临时目录
     base_path = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
     _possible_frontend_paths = [
-        os.path.join(base_path, "frontend", "dist"),
-        os.path.join(os.path.dirname(sys.executable), "frontend", "dist"),
+        os.path.join(base_path, "src", "web", "dist"),
+        os.path.join(base_path, "web", "dist"),
+        os.path.join(os.path.dirname(sys.executable), "src", "web", "dist"),
+        os.path.join(os.path.dirname(sys.executable), "web", "dist"),
     ]
 else:
     # 开发环境
     _possible_frontend_paths = [
-        "frontend/dist",
-        os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist"),
+        os.path.join(os.path.dirname(__file__), "..", "web", "dist"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "dist"),
+        "src/web/dist",
+        "web/dist",
     ]
 
 # 查找前端文件
@@ -559,7 +562,7 @@ if __name__ == "__main__":
     else:
         # 开发模式：支持 reload
         uvicorn.run(
-            "lab_service:app",  # 使用导入字符串
+            "main:app",  # 使用导入字符串
             host="0.0.0.0",
             port=8000,
             reload=True,  # 开发时自动重载
@@ -567,5 +570,5 @@ if __name__ == "__main__":
         )
     
     # 生产模式（使用命令行）：
-    # uvicorn lab_service:app --host 0.0.0.0 --port 8000 --workers 4
+    # uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 

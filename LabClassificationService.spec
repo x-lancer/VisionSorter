@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('service', 'service'), ('frontend/dist', 'frontend/dist')]
+datas = [('src/server', 'src/server'), ('src/web/dist', 'src/web/dist')]
 binaries = []
 hiddenimports = ['uvicorn.lifespan.on', 'uvicorn.lifespan.off', 'uvicorn.protocols.websockets.auto', 'uvicorn.protocols.websockets.websockets_impl', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.http.h11_impl', 'uvicorn.protocols.http.httptools_impl']
 tmp_ret = collect_all('sklearn')
@@ -11,7 +11,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['service\\lab_service.py'],
+    ['src/server/main.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,

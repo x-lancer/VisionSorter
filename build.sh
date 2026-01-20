@@ -22,7 +22,7 @@ fi
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 
 echo "[1/4] 构建前端..."
-cd frontend
+cd src/web
 if [ ! -d "node_modules" ]; then
     echo "安装前端依赖..."
     npm install
@@ -31,10 +31,10 @@ echo "构建前端生产版本..."
 npm run build
 if [ $? -ne 0 ]; then
     echo "[错误] 前端构建失败"
-    cd ..
+    cd ../..
     exit 1
 fi
-cd ..
+cd ../..
 echo "前端构建完成！"
 echo ""
 
@@ -57,8 +57,8 @@ echo ""
 $PYTHON_CMD -m PyInstaller --name=LabClassificationService \
     --onefile \
     --console \
-    --add-data "service:service" \
-    --add-data "frontend/dist:frontend/dist" \
+    --add-data "src/server:src/server" \
+    --add-data "src/web/dist:src/web/dist" \
     --hidden-import=uvicorn.lifespan.on \
     --hidden-import=uvicorn.lifespan.off \
     --hidden-import=uvicorn.protocols.websockets.auto \
@@ -68,7 +68,7 @@ $PYTHON_CMD -m PyInstaller --name=LabClassificationService \
     --hidden-import=uvicorn.protocols.http.httptools_impl \
     --collect-all=sklearn \
     --collect-all=scipy \
-    service/lab_service.py
+    src/server/main.py
 
 if [ $? -ne 0 ]; then
     echo "[错误] 打包失败"

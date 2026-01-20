@@ -25,7 +25,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo [1/4] 构建前端...
-cd frontend
+cd src\web
 if not exist node_modules (
     echo 安装前端依赖...
     call npm install
@@ -34,11 +34,11 @@ echo 构建前端生产版本...
 call npm run build
 if %ERRORLEVEL% neq 0 (
     echo [错误] 前端构建失败
-    cd ..
+    cd ..\..
     pause
     exit /b 1
 )
-cd ..
+cd ..\..
 echo 前端构建完成！
 echo.
 
@@ -61,8 +61,8 @@ echo.
 pyinstaller --name=LabClassificationService ^
     --onefile ^
     --console ^
-    --add-data "service;service" ^
-    --add-data "frontend/dist;frontend/dist" ^
+    --add-data "src/server;src/server" ^
+    --add-data "src/web/dist;src/web/dist" ^
     --hidden-import=uvicorn.lifespan.on ^
     --hidden-import=uvicorn.lifespan.off ^
     --hidden-import=uvicorn.protocols.websockets.auto ^
@@ -72,7 +72,7 @@ pyinstaller --name=LabClassificationService ^
     --hidden-import=uvicorn.protocols.http.httptools_impl ^
     --collect-all=sklearn ^
     --collect-all=scipy ^
-    service/lab_service.py
+    src/server/main.py
 
 if %ERRORLEVEL% neq 0 (
     echo [错误] 打包失败
