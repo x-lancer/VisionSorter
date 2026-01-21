@@ -1171,12 +1171,19 @@ const App: React.FC = () => {
                             </Text>
                           )}
                         </div>
-                        <div style={{ fontSize: 12, color: '#4b5563', minHeight: 18 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: '#4b5563',
+                            minHeight: 54,
+                            lineHeight: '18px',
+                          }}
+                        >
                           {currentResult && currentResult.lab ? (
                             <>
-                              Lab：L {currentResult.lab.L.toFixed(1)}，a{' '}
-                              {currentResult.lab.a.toFixed(1)}，b{' '}
-                              {currentResult.lab.b.toFixed(1)}
+                              <div>Lab：</div>
+                              <div>L {currentResult.lab.L.toFixed(1)}</div>
+                              <div>a {currentResult.lab.a.toFixed(1)}，b {currentResult.lab.b.toFixed(1)}</div>
                             </>
                           ) : (
                             <span style={{ color: '#9ca3af' }}>Lab 等待计算</span>
@@ -1228,7 +1235,14 @@ const App: React.FC = () => {
                             </Text>
                           )}
                         </div>
-                        <div style={{ fontSize: 12, color: '#4b5563', minHeight: 18 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: '#4b5563',
+                            minHeight: 54,
+                            lineHeight: '18px',
+                          }}
+                        >
                           {currentResult && currentResult.matched_cluster_id !== null ? (
                             (() => {
                               const clusterId = currentResult.matched_cluster_id!;
@@ -1237,9 +1251,12 @@ const App: React.FC = () => {
                                 null;
                               return cluster && cluster.lab_mean ? (
                                 <>
-                                  Lab：L {cluster.lab_mean[0].toFixed(1)}，a{' '}
-                                  {cluster.lab_mean[1].toFixed(1)}，b{' '}
-                                  {cluster.lab_mean[2].toFixed(1)}
+                                  <div>Lab：</div>
+                                  <div>L {cluster.lab_mean[0].toFixed(1)}</div>
+                                  <div>
+                                    a {cluster.lab_mean[1].toFixed(1)}，b{' '}
+                                    {cluster.lab_mean[2].toFixed(1)}
+                                  </div>
                                 </>
                               ) : (
                                 <span style={{ color: '#9ca3af' }}>分类 Lab 未知</span>
