@@ -135,3 +135,41 @@ def extract_lab_from_mask(
     
     return lab_vector
 
+
+@timer
+def extract_lab_from_image(
+    image_path: str,
+    center_ratio: float = 0.4,
+    use_median: bool = True
+) -> np.ndarray:
+    """
+    从图片文件中读取图像并提取中心区域的LAB向量。
+    
+    参数:
+        image_path: 图片文件路径
+        center_ratio: 中心区域半径比例，默认0.4（即40%）
+        use_median: 是否使用中值（抗高光），默认True
+    
+    返回:
+        lab_vector: [L, a, b] 三个值的numpy数组
+    """
+    # 读取图像（BGR）
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"无法读取图片: {image_path}")
+    
+    h, w = image.shape[:2]
+    # 创建全图mask
+    mask = np.ones((h, w), dtype=np.uint8) * 255
+    
+    # 提取中心区域mask
+    center_mask = extract_center_region(mask, ratio=center_ratio)
+    
+    # 转换到LAB空间
+    lab_image = bgr_to_lab(image)
+    
+    # 根据mask提取LAB向量
+    lab_vector = extract_lab_from_mask(lab_image, center_mask, use_median=use_median)
+    
+    return lab_vector
+

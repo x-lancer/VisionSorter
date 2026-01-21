@@ -52,3 +52,4 @@ Thumbs.db
 # Project-specific
 ##############################
 /samples/
+src/server/vision_sorter.db

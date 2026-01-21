@@ -9,15 +9,15 @@ const ResultPlaceholder: React.FC = () => {
       <Empty
         description={
           <div>
-            <Title level={4} type="secondary" style={{ marginTop: 0 }}>
+            <Title level={5} type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
               等待聚类结果
             </Title>
-            <Text type="secondary">
+            <Text type="secondary" style={{ fontSize: 12 }}>
               请在左侧输入图片目录路径和聚类数量，然后点击"开始聚类"按钮。
             </Text>
           </div>
         }
-        style={{ padding: '60px 0' }}
+        style={{ padding: '40px 0' }}
       />
     </Card>
   );

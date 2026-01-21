@@ -29,9 +29,9 @@ const ParameterConfig: React.FC<ParameterConfigProps> = ({
         body: { flex: 1, display: 'flex', flexDirection: 'column' },
       }}
     >
-      <Space orientation="vertical" style={{ width: '100%' }} size="large">
+      <Space orientation="vertical" style={{ width: '100%', fontSize: 12 }} size="middle">
         <div>
-          <Text strong>图片目录路径：</Text>
+          <Text strong style={{ fontSize: 12 }}>图片目录路径：</Text>
           <Input
             placeholder="例如：D:\Workspace\VisionSorter\samples\Validation_MIX"
             value={imageDir}
@@ -46,7 +46,7 @@ const ParameterConfig: React.FC<ParameterConfigProps> = ({
           </Text>
         </div>
         <div>
-          <Text strong>聚类数量 (n)：</Text>
+          <Text strong style={{ fontSize: 12 }}>聚类数量 (n)：</Text>
           <Input
             type="number"
             min={1}
@@ -61,7 +61,7 @@ const ParameterConfig: React.FC<ParameterConfigProps> = ({
           icon={<PlayCircleOutlined />}
           onClick={onStart}
           loading={loading}
-          size="large"
+          size="middle"
           block
         >
           {loading ? '处理中...' : '开始聚类'}

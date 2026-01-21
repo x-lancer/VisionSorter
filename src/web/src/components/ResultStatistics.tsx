@@ -103,9 +103,7 @@ const ResultStatistics: React.FC<ResultStatisticsProps> = ({ result, onClusterSe
         bodyStyle={{ padding: 16 }}
         title="分类预览"
       >
-        <Text type="secondary">
-          点击某一行可跳转到对应的“分类详情”页签，并高亮该类别。
-        </Text>
+        <Text type="secondary">点击可跳转查看对应分类详情</Text>
         <List
           style={{ marginTop: 16 }}
           dataSource={clusters}
@@ -159,4 +157,3 @@ const ResultStatistics: React.FC<ResultStatisticsProps> = ({ result, onClusterSe
 };
 
 export default ResultStatistics;
-

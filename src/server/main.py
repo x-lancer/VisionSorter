@@ -6,10 +6,11 @@ LAB颜色值计算服务API
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 from typing import Optional, List
 from pydantic import BaseModel
 import os
@@ -19,7 +20,7 @@ from utils.color_clustering import (
     cluster_images_by_color_de2000,
     calculate_inter_cluster_distance
 )
-from utils.db import init_db, insert_cluster_result
+from utils.db import init_db, insert_cluster_result, insert_detection_result
 import json
 
 
@@ -553,6 +554,8 @@ class SaveClusterRequest(BaseModel):
     image_dir: str
     n_clusters: int
     result: dict
+    task_name: str = ""
+    task_id: str = ""
 
 
 @app.post("/api/save-cluster-result")
@@ -575,15 +578,15 @@ async def save_cluster_result(request: SaveClusterRequest):
             total_images=total_images,
             inter_cluster_stats=inter_cluster_stats,
             payload_json=json.dumps(payload, ensure_ascii=False),
+            task_name=request.task_name,
+            task_id=request.task_id,
         )
 
         return {
             "success": True,
             "id": record_id,
-            "message": "聚类结果已保存到本地数据库（SQLite）"
+            "message": "聚类结果已保存到本地数据库"
         }
-        
-        return response
         
     except HTTPException:
         raise
@@ -592,6 +595,340 @@ async def save_cluster_result(request: SaveClusterRequest):
             status_code=500,
             detail=f"保存聚类结果时发生错误: {str(e)}"
         )
+
+
+class SaveDetectionRequest(BaseModel):
+    """保存检测结果到 SQLite 的请求模型"""
+    image_dir: str
+    total: int
+    classified: int
+    results: list[dict]
+    task_name: str = ""
+    task_id: str = ""
+
+
+@app.post("/api/save-detection-result")
+async def save_detection_result(request: SaveDetectionRequest):
+    """
+    将前端当前展示的检测结果保存到 SQLite。
+
+    说明：
+      - 由前端在“检测完成后，用户点击保存结果按钮”时触发
+      - 仅在有有效结果时调用
+    """
+    try:
+      payload = {
+          "image_dir": request.image_dir,
+          "total": request.total,
+          "classified": request.classified,
+          "results": request.results,
+      }
+
+      record_id = insert_detection_result(
+          image_dir=request.image_dir,
+          total_images=request.total,
+          classified=request.classified,
+          payload_json=json.dumps(payload, ensure_ascii=False),
+          task_name=request.task_name,
+          task_id=request.task_id,
+      )
+
+      return {
+          "success": True,
+          "id": record_id,
+          "message": "检测结果已保存到本地数据库"
+      }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"保存检测结果时发生错误: {str(e)}"
+        )
+
+
+@app.get("/api/saved-cluster-results")
+async def get_saved_cluster_results():
+    """
+    获取所有已保存的聚类结果列表。
+    """
+    try:
+        from utils.db import get_all_cluster_results
+        results = get_all_cluster_results()
+        return {
+            "success": True,
+            "data": results
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取聚类结果时发生错误: {str(e)}"
+        )
+
+
+def process_single_image(
+    image_path: str,
+    clusters: dict,
+    max_scale: float = 1.1
+) -> dict:
+    """
+    处理单张图片的检测逻辑
+    
+    参数:
+        image_path: 图片路径
+        clusters: 聚类结果字典
+        max_scale: 类内最大距离的放大系数
+    
+    返回:
+        检测结果字典
+    """
+    from skimage.color import deltaE_ciede2000
+    from utils.imgtool import extract_lab_from_image
+    
+    try:
+        # 提取图片的 Lab 值
+        lab_new = extract_lab_from_image(image_path, center_ratio=0.4)
+        L_new, a_new, b_new = lab_new
+        
+        # 步骤1: 计算到所有类别中心的 ΔE2000
+        best_cluster_id = None
+        best_distance = float('inf')
+        
+        for cluster_id_str, cluster_info in clusters.items():
+            cluster_id = int(cluster_id_str)
+            lab_mean = cluster_info.get('lab_mean', [])
+            
+            if len(lab_mean) != 3:
+                continue
+            
+            # 计算 ΔE2000 距离
+            lab_new_reshaped = np.array([L_new, a_new, b_new]).reshape(1, 1, 3)
+            lab_mean_reshaped = np.array(lab_mean).reshape(1, 1, 3)
+            distance = deltaE_ciede2000(lab_new_reshaped, lab_mean_reshaped)[0, 0]
+            
+            if distance < best_distance:
+                best_distance = distance
+                best_cluster_id = cluster_id
+        
+        # 步骤2: 判断是否可信（基于类内最大距离阈值）
+        matched_cluster_id = None
+        status = '未归类'
+        
+        if best_cluster_id is not None:
+            cluster_info = clusters.get(str(best_cluster_id), {})
+            de2000_intra_max = cluster_info.get('de2000_intra_max', 0.0)
+            threshold = de2000_intra_max * max_scale
+            
+            if best_distance <= threshold:
+                matched_cluster_id = best_cluster_id
+                status = '已归类'
+            else:
+                status = '距离过远'
+        
+        # 返回检测结果
+        return {
+            'filename': os.path.basename(image_path),
+            'path': image_path,
+            'lab': {
+                'L': float(L_new),
+                'a': float(a_new),
+                'b': float(b_new),
+            },
+            'matched_cluster_id': matched_cluster_id,
+            'distance': float(best_distance),
+            'status': status,
+        }
+        
+    except Exception as e:
+        # 单张图片处理失败，返回错误信息
+        return {
+            'filename': os.path.basename(image_path),
+            'path': image_path,
+            'lab': None,
+            'matched_cluster_id': None,
+            'distance': None,
+            'status': f'处理失败: {str(e)}',
+        }
+
+
+class DetectRequest(BaseModel):
+    """检测任务请求模型"""
+    image_dir: str
+    cluster_result: dict  # 聚类结果数据
+    max_scale: float = 1.1  # 类内最大距离的放大系数，默认1.1
+
+
+@app.post("/api/detect-images")
+async def detect_images(request: DetectRequest):
+    """
+    基于已有聚类结果，检测新图片目录中的图片，将每张图片归类到最相近的类别。
+    """
+    try:
+        from skimage.color import deltaE_ciede2000
+        from utils.imgtool import extract_lab_from_image
+        
+        image_dir = request.image_dir.strip()
+        cluster_result = request.cluster_result
+        max_scale = request.max_scale
+        
+        # 验证目录存在
+        if not os.path.exists(image_dir) or not os.path.isdir(image_dir):
+            raise HTTPException(status_code=400, detail=f"目录不存在: {image_dir}")
+        
+        # 获取所有图片文件
+        image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.tif']
+        image_paths = []
+        for ext in image_extensions:
+            image_paths.extend(glob.glob(os.path.join(image_dir, ext)))
+            image_paths.extend(glob.glob(os.path.join(image_dir, ext.upper())))
+        
+        if not image_paths:
+            raise HTTPException(status_code=400, detail=f"目录中没有找到图片文件: {image_dir}")
+        
+        # 获取聚类结果的 clusters 数据
+        clusters = cluster_result.get('clusters', {})
+        if not clusters:
+            raise HTTPException(status_code=400, detail="聚类结果中没有类别数据")
+        
+        # 检测结果列表
+        detection_results = []
+        
+        # 依次处理每张图片
+        for image_path in sorted(image_paths):
+            result = process_single_image(image_path, clusters, max_scale)
+            detection_results.append(result)
+        
+        return {
+            "success": True,
+            "results": detection_results,
+            "total": len(detection_results),
+            "classified": len([r for r in detection_results if r['matched_cluster_id'] is not None]),
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"检测过程中发生错误: {str(e)}"
+        )
+
+
+@app.websocket("/ws/detect-images")
+async def websocket_detect_images(websocket: WebSocket):
+    """
+    WebSocket 实时检测图片端点
+    支持逐张图片处理并实时返回结果，支持取消检测
+    """
+    await websocket.accept()
+    
+    try:
+        # 接收初始化参数
+        init_data = await websocket.receive_json()
+        image_dir = init_data.get('image_dir', '').strip()
+        cluster_result = init_data.get('cluster_result', {})
+        max_scale = init_data.get('max_scale', 1.1)
+        
+        # 验证参数
+        if not image_dir or not os.path.exists(image_dir) or not os.path.isdir(image_dir):
+            await websocket.send_json({
+                'type': 'error',
+                'message': f'目录不存在: {image_dir}'
+            })
+            await websocket.close()
+            return
+        
+        # 获取聚类结果的 clusters 数据
+        clusters = cluster_result.get('clusters', {})
+        if not clusters:
+            await websocket.send_json({
+                'type': 'error',
+                'message': '聚类结果中没有类别数据'
+            })
+            await websocket.close()
+            return
+        
+        # 获取所有图片文件
+        image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.tif']
+        image_paths = []
+        for ext in image_extensions:
+            image_paths.extend(glob.glob(os.path.join(image_dir, ext)))
+            image_paths.extend(glob.glob(os.path.join(image_dir, ext.upper())))
+        
+        if not image_paths:
+            await websocket.send_json({
+                'type': 'error',
+                'message': f'目录中没有找到图片文件: {image_dir}'
+            })
+            await websocket.close()
+            return
+        
+        image_paths = sorted(image_paths)
+        total = len(image_paths)
+        
+        # 发送开始信号
+        await websocket.send_json({
+            'type': 'start',
+            'total': total
+        })
+        
+        # 依次处理每张图片
+        classified_count = 0
+        for idx, image_path in enumerate(image_paths):
+            # 检查是否收到取消信号（非阻塞）
+            try:
+                cancel_data = await asyncio.wait_for(
+                    websocket.receive(), timeout=0.01
+                )
+                if cancel_data.get('type') == 'websocket.receive':
+                    text_data = cancel_data.get('text', '')
+                    json_data = cancel_data.get('json')
+                    # 检查文本消息或 JSON 消息
+                    if (text_data == 'cancel') or (json_data and json_data.get('type') == 'cancel'):
+                        await websocket.send_json({
+                            'type': 'cancelled',
+                            'processed': idx,
+                            'total': total
+                        })
+                        break
+            except asyncio.TimeoutError:
+                pass  # 没有取消信号，继续处理
+            
+            # 处理单张图片
+            result = process_single_image(image_path, clusters, max_scale)
+            
+            # 统计归类数量
+            if result.get('matched_cluster_id') is not None:
+                classified_count += 1
+            
+            # 立即发送单张结果
+            await websocket.send_json({
+                'type': 'progress',
+                'index': idx,
+                'total': total,
+                'result': result
+            })
+        
+        # 发送完成信号
+        await websocket.send_json({
+            'type': 'completed',
+            'total': total,
+            'classified': classified_count
+        })
+        
+    except WebSocketDisconnect:
+        # 客户端主动断开连接，清理资源
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({
+                'type': 'error',
+                'message': f'检测过程中发生错误: {str(e)}'
+            })
+        except:
+            pass
+        await websocket.close()
 
 
 if __name__ == "__main__":

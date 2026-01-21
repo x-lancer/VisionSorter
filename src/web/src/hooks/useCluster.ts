@@ -45,7 +45,7 @@ export const useCluster = () => {
     }
   };
 
-  const saveCurrentResult = async () => {
+  const saveCurrentResult = async (taskName?: string, taskId?: string) => {
     if (!result || !currentRequest) return;
 
     try {
@@ -54,8 +54,10 @@ export const useCluster = () => {
         image_dir: currentRequest.imageDir,
         n_clusters: currentRequest.nClusters,
         result,
+        task_name: taskName || '',
+        task_id: taskId || '',
       });
-      message.success('聚类结果已保存到本地数据库（SQLite）');
+      message.success('聚类结果已保存到本地数据库');
     } catch (error: any) {
       message.error(error.response?.data?.detail || '保存失败，请稍后重试');
       console.error('Save error:', error);
