@@ -33,12 +33,11 @@ const ClusterTabs: React.FC<ClusterTabsProps> = ({
           }
         }}
         items={sortedClusters.map((cluster) => {
-          const displayId = cluster.cluster_id + 1; // 显示时从1开始
           return {
             key: String(cluster.cluster_id),
             label: (
               <Space>
-                <Tag color="blue">类别 {displayId}</Tag>
+                <Tag color="blue">类别 {cluster.cluster_id}</Tag>
                 <Text>{cluster.count} 张</Text>
               </Space>
             ),

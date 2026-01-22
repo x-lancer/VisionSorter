@@ -86,7 +86,7 @@ def cluster_images_by_color_de2000(
         # 每个图片单独一类
         clusters = {}
         for i in range(n_samples):
-            clusters[i] = {
+            clusters[i + 1] = {  # 从1开始索引
                 'images': [image_paths[i]],
                 'indices': [i],
                 'lab_mean': lab_vectors[i].tolist(),
@@ -165,7 +165,9 @@ def cluster_images_by_color_de2000(
             de2000_max_all_pairs = 0.0
             de2000_std_all_pairs = 0.0
         
-        clusters[cluster_id] = {
+        # 类别ID从1开始索引
+        display_cluster_id = cluster_id + 1
+        clusters[display_cluster_id] = {
             'images': [image_paths[idx] for idx in cluster_indices],
             'indices': cluster_indices.tolist(),
             'lab_mean': lab_mean,  # 类别平均LAB值（可作为基准）
@@ -206,8 +208,10 @@ def calculate_inter_cluster_distance(clusters: Dict[int, Dict]) -> Dict[str, flo
     inter_distances = []
     for i in range(n_clusters):
         for j in range(i + 1, n_clusters):
-            lab_mean_i = np.array(clusters[i]['lab_mean']).reshape(1, 1, 3)
-            lab_mean_j = np.array(clusters[j]['lab_mean']).reshape(1, 1, 3)
+            cluster_id_i = cluster_ids[i]
+            cluster_id_j = cluster_ids[j]
+            lab_mean_i = np.array(clusters[cluster_id_i]['lab_mean']).reshape(1, 1, 3)
+            lab_mean_j = np.array(clusters[cluster_id_j]['lab_mean']).reshape(1, 1, 3)
             de = deltaE_ciede2000(lab_mean_i, lab_mean_j)[0, 0]
             inter_distances.append(de)
     

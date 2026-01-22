@@ -603,6 +603,7 @@ class SaveDetectionRequest(BaseModel):
     total: int
     classified: int
     results: list[dict]
+    max_scale: float = 1.1
     task_name: str = ""
     task_id: str = ""
 
@@ -622,6 +623,7 @@ async def save_detection_result(request: SaveDetectionRequest):
           "total": request.total,
           "classified": request.classified,
           "results": request.results,
+          "max_scale": request.max_scale,
       }
 
       record_id = insert_detection_result(
@@ -667,6 +669,57 @@ async def get_saved_cluster_results():
         )
 
 
+@app.get("/api/saved-detection-results")
+async def get_saved_detection_results():
+    """
+    获取所有已保存的检测结果列表。
+    """
+    try:
+        from utils.db import get_all_detection_results
+        results = get_all_detection_results()
+        return {
+            "success": True,
+            "data": results
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取检测结果时发生错误: {str(e)}"
+        )
+
+
+@app.delete("/api/delete-result/{result_id}")
+async def delete_result(result_id: int, type: str = Query("cluster", description="任务类型: cluster 或 detect")):
+    """
+    删除指定的任务结果。
+    """
+    try:
+        if type == "detect":
+            from utils.db import delete_detection_result
+            success = delete_detection_result(result_id)
+        else:
+            from utils.db import delete_cluster_result
+            success = delete_cluster_result(result_id)
+            
+        if success:
+            return {
+                "success": True,
+                "message": "删除成功"
+            }
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"未找到 ID 为 {result_id} 的记录"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除结果时发生错误: {str(e)}"
+        )
+
+
 def process_single_image(
     image_path: str,
     clusters: dict,
@@ -683,8 +736,12 @@ def process_single_image(
     返回:
         检测结果字典
     """
+    import time
     from skimage.color import deltaE_ciede2000
     from utils.imgtool import extract_lab_from_image
+    
+    # 记录开始时间
+    start_time = time.time()
     
     try:
         # 提取图片的 Lab 值
@@ -726,6 +783,9 @@ def process_single_image(
             else:
                 status = '距离过远'
         
+        # 计算耗时（毫秒）
+        elapsed_time = int((time.time() - start_time) * 1000)
+        
         # 返回检测结果
         return {
             'filename': os.path.basename(image_path),
@@ -738,9 +798,13 @@ def process_single_image(
             'matched_cluster_id': matched_cluster_id,
             'distance': float(best_distance),
             'status': status,
+            'elapsed_time': elapsed_time,
         }
         
     except Exception as e:
+        # 计算耗时（毫秒）
+        elapsed_time = int((time.time() - start_time) * 1000)
+        
         # 单张图片处理失败，返回错误信息
         return {
             'filename': os.path.basename(image_path),
@@ -749,6 +813,7 @@ def process_single_image(
             'matched_cluster_id': None,
             'distance': None,
             'status': f'处理失败: {str(e)}',
+            'elapsed_time': elapsed_time,
         }
 
 

@@ -93,6 +93,17 @@ def init_db() -> None:
             )
             """
         )
+        
+        # 迁移：为已存在的 cluster_results 表添加 task_name 和 task_id 列（如果不存在）
+        try:
+            cur.execute("ALTER TABLE cluster_results ADD COLUMN task_name TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略错误
+        
+        try:
+            cur.execute("ALTER TABLE cluster_results ADD COLUMN task_id TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略错误
 
 
 def insert_cluster_result(
@@ -211,4 +222,49 @@ def get_all_cluster_results() -> list:
                 "payload_json": row[11],
             })
         return results
+
+
+def get_all_detection_results() -> list:
+    """获取所有已保存的检测结果列表。"""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, created_at, image_dir, total_images, classified,
+                   task_name, task_id, payload_json
+            FROM detection_results
+            ORDER BY created_at DESC
+            """
+        )
+        rows = cur.fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "id": row[0],
+                "created_at": row[1],
+                "image_dir": row[2],
+                "total_images": row[3],
+                "classified": row[4],
+                "task_name": row[5],
+                "task_id": row[6],
+                "payload_json": row[7],
+            })
+        return results
+
+
+def delete_cluster_result(result_id: int) -> bool:
+    """删除指定的聚类结果。"""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM cluster_results WHERE id = ?", (result_id,))
+        return cur.rowcount > 0
+
+
+def delete_detection_result(result_id: int) -> bool:
+    """删除指定的检测结果。"""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM detection_results WHERE id = ?", (result_id,))
+        return cur.rowcount > 0
+
 

@@ -36,7 +36,7 @@ const ImageList: React.FC<ImageListProps> = ({ images }) => {
       dataIndex: 'cluster_id',
       key: 'cluster_id',
       width: 100,
-      render: (id: number) => <Tag color="blue">类别 {id + 1}</Tag>, // 显示时从1开始
+      render: (id: number) => <Tag color="blue">类别 {id}</Tag>,
     },
     {
       title: 'L',

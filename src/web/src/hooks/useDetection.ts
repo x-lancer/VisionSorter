@@ -14,6 +14,7 @@ export interface DetectionResult {
   matched_cluster_id: number | null;
   distance: number | null;
   status: string;
+  elapsed_time?: number; // 检测耗时（毫秒）
 }
 
 export const useDetection = () => {
@@ -27,7 +28,8 @@ export const useDetection = () => {
   const handleDetection = (
     imageDir: string,
     clusterResult: ClusterResult,
-    onProgress?: (index: number, total: number, current: DetectionResult) => void
+    onProgress?: (index: number, total: number, current: DetectionResult) => void,
+    maxScale: number = 1.1
   ): Promise<DetectionResult[] | null> => {
     return new Promise((resolve, reject) => {
       if (!imageDir.trim()) {
@@ -63,7 +65,7 @@ export const useDetection = () => {
         ws.send(JSON.stringify({
           image_dir: imageDir.trim(),
           cluster_result: clusterResult,
-          max_scale: 1.1,
+          max_scale: maxScale,
         }));
       };
 

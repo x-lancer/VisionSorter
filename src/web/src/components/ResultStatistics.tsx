@@ -111,7 +111,6 @@ const ResultStatistics: React.FC<ResultStatisticsProps> = ({ result, onClusterSe
           renderItem={(cluster) => {
             const [L, a, b] = cluster.lab_mean || [0, 0, 0];
             const color = labToRgb(L, a, b);
-            const displayId = cluster.cluster_id + 1;
 
             return (
               <List.Item
@@ -128,7 +127,7 @@ const ResultStatistics: React.FC<ResultStatisticsProps> = ({ result, onClusterSe
               >
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                   <Space>
-                    <Tag color="blue">类别 {displayId}</Tag>
+                    <Tag color="blue">类别 {cluster.cluster_id}</Tag>
                     <Text>
                       L: {L.toFixed(2)} / a: {a.toFixed(2)} / b: {b.toFixed(2)}
                     </Text>
