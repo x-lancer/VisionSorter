@@ -46,11 +46,11 @@ export const useCluster = () => {
   };
 
   const saveCurrentResult = async (taskName?: string, taskId?: string) => {
-    if (!result || !currentRequest) return;
+    if (!result || !currentRequest) return null;
 
     try {
       setSaving(true);
-      await axios.post(`${API_BASE_URL}/api/save-cluster-result`, {
+      const response = await axios.post(`${API_BASE_URL}/api/save-cluster-result`, {
         image_dir: currentRequest.imageDir,
         n_clusters: currentRequest.nClusters,
         result,
@@ -58,9 +58,11 @@ export const useCluster = () => {
         task_id: taskId || '',
       });
       message.success('聚类结果已保存到本地数据库');
+      return response.data;
     } catch (error: any) {
       message.error(error.response?.data?.detail || '保存失败，请稍后重试');
       console.error('Save error:', error);
+      return null;
     } finally {
       setSaving(false);
     }

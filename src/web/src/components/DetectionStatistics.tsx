@@ -21,30 +21,44 @@ const { Text, Title } = Typography;
 interface DetectionStatisticsProps {
   detectionResults: DetectionResult[];
   clusterResult: ClusterResult;
+  statistics?: Record<string, number>;
+  detectionTotal?: number;
 }
 
 export const DetectionStatistics: React.FC<DetectionStatisticsProps> = ({
   detectionResults,
   clusterResult,
+  statistics,
+  detectionTotal = 0,
 }) => {
   // 计算统计数据
   const statsData = useMemo(() => {
-    if (!detectionResults.length || !clusterResult?.clusters) {
+    if (!clusterResult?.clusters) {
       return [];
     }
 
-    const clusterCounts: Record<string, number> = {};
+    let clusterCounts: Record<string, number> = {};
     let unclassifiedCount = 0;
 
-    // 统计每个类别的数量
-    detectionResults.forEach((result) => {
-      if (result.matched_cluster_id !== null) {
-        const clusterId = String(result.matched_cluster_id);
-        clusterCounts[clusterId] = (clusterCounts[clusterId] || 0) + 1;
-      } else {
-        unclassifiedCount++;
-      }
-    });
+    if (statistics) {
+      // 使用预计算的统计数据
+      clusterCounts = { ...statistics };
+      unclassifiedCount = clusterCounts['-1'] || 0;
+      // 移除未归类项，避免重复处理
+      delete clusterCounts['-1'];
+    } else if (detectionResults.length > 0) {
+      // 实时计算
+      detectionResults.forEach((result) => {
+        if (result.matched_cluster_id !== null) {
+          const clusterId = String(result.matched_cluster_id);
+          clusterCounts[clusterId] = (clusterCounts[clusterId] || 0) + 1;
+        } else {
+          unclassifiedCount++;
+        }
+      });
+    } else {
+      return [];
+    }
 
     // 转换为图表所需格式
     const data = Object.keys(clusterResult.clusters).map((clusterId) => {
@@ -78,9 +92,11 @@ export const DetectionStatistics: React.FC<DetectionStatisticsProps> = ({
 
     // 按数量排序（可选）
     return data.sort((a, b) => b.value - a.value);
-  }, [detectionResults, clusterResult]);
+  }, [detectionResults, clusterResult, statistics]);
 
-  if (detectionResults.length === 0) {
+  const totalSamples = detectionTotal > 0 ? detectionTotal : detectionResults.length;
+
+  if (totalSamples === 0) {
     return <Empty description="暂无检测数据" />;
   }
 
@@ -88,7 +104,7 @@ export const DetectionStatistics: React.FC<DetectionStatisticsProps> = ({
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
-      const percent = ((data.value / detectionResults.length) * 100).toFixed(1);
+      const percent = totalSamples > 0 ? ((data.value / totalSamples) * 100).toFixed(1) : 0;
       return (
         <div
           style={{
@@ -179,13 +195,13 @@ export const DetectionStatistics: React.FC<DetectionStatisticsProps> = ({
             <div style={{ minWidth: 120 }}>
               <Text type="secondary" style={{ fontSize: 13 }}>总样本数</Text>
               <div style={{ fontSize: 24, fontWeight: 500 }}>
-                {detectionResults.length}
+                {totalSamples}
               </div>
             </div>
             <div style={{ minWidth: 120 }}>
               <Text type="secondary" style={{ fontSize: 13 }}>已归类样本</Text>
               <div style={{ fontSize: 24, fontWeight: 500, color: '#52c41a' }}>
-                {detectionResults.length -
+                {totalSamples -
                   (statsData.find((d) => d.clusterId === -1)?.value || 0)}
               </div>
             </div>

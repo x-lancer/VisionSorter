@@ -139,7 +139,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <SunOutlined style={{ fontSize: 16, color: '#f59e0b' }} />
           )}
         </div>
-        <Text style={{ color: '#9ca3af', fontSize: 12 }}>版本号 v1.0.0</Text>
+        <Text style={{ color: '#9ca3af', fontSize: 12 }}>版本号 v1.0.1</Text>
       </div>
     </Header>
   );

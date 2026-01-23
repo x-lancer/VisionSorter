@@ -1,72 +1,76 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, Space, Typography, Input, InputNumber, Select, Button, Tabs, theme } from 'antd';
 import { Task, ClusterResult } from '../types';
 import { labToRgbColor } from '../utils/colorUtils';
 import { DetectionOverview } from './DetectionOverview';
 import { DetectionList } from './DetectionList';
 import { DetectionStatistics } from './DetectionStatistics';
+import { useTaskStore } from '../store/useTaskStore';
+import { useTasks } from '../hooks/useTasks';
 
 const { Text } = Typography;
 const { Search } = Input;
 
 interface DetectionTaskViewProps {
-  task: Task;
-  savedClusterResults: Array<{
-    id: number;
-    task_name: string;
-    created_at: string;
-    clusterResult: ClusterResult;
-  }>;
-  detectionViewKey: 'overview' | 'list' | 'statistics';
-  searchText: string;
-  filterClusterId: number | null;
-  filterStatus: string | null;
-  savingDetectionTaskId: string | null;
-  onUpdateTaskParams: (taskId: string, params: Partial<Task['params']>) => void;
-  onStartDetection: (taskId: string) => void;
-  onCancelDetection: (taskId: string) => void;
-  onPauseDetection: (taskId: string) => void;
-  onResumeDetection: (taskId: string) => void;
-  onSaveDetectionResult: (task: Task) => void;
-  onDetectionViewKeyChange: (key: 'overview' | 'list' | 'statistics') => void;
-  onSearchTextChange: (value: string) => void;
-  onFilterClusterIdChange: (value: number | null) => void;
-  onFilterStatusChange: (value: string | null) => void;
+  taskId: string;
 }
 
 export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
-  task,
-  savedClusterResults,
-  detectionViewKey,
-  searchText,
-  filterClusterId,
-  filterStatus,
-  savingDetectionTaskId,
-  onUpdateTaskParams,
-  onStartDetection,
-  onCancelDetection,
-  onPauseDetection,
-  onResumeDetection,
-  onSaveDetectionResult,
-  onDetectionViewKeyChange,
-  onSearchTextChange,
-  onFilterClusterIdChange,
-  onFilterStatusChange,
+  taskId,
 }) => {
   const { token } = theme.useToken();
+  
+  // 1. 本地 UI 状态
+  const [detectionViewKey, setDetectionViewKey] = useState<'overview' | 'list' | 'statistics'>('overview');
+  const [searchText, setSearchText] = useState<string>('');
+  const [filterClusterId, setFilterClusterId] = useState<number | null>(null);
+  
+  // 2. 从 Store 获取任务数据
+  const task = useTaskStore((state) => state.tasks.find((t) => t.id === taskId));
+  const savedClusterResults = useTaskStore((state) => state.savedClusterResults);
+
+  // 3. 获取操作方法
+  const { 
+    updateTaskParams, 
+    onStartDetection, 
+    onCancelDetection, 
+    onPauseDetection, 
+    onResumeDetection, 
+    handleSaveDetectionResult,
+    savingDetectionTaskId,
+    loadTaskDetail, // 引入加载详情方法
+    loadClusterResultDetail // 引入加载聚类详情方法
+  } = useTasks();
+
+  // 组件挂载时检查是否需要加载详情
+  React.useEffect(() => {
+    // 如果是已保存的任务，且没有检测结果，且没有正在加载，则加载详情
+    const hasResults = task.params.detectionResults && task.params.detectionResults.length > 0;
+    if (task.isSaved && !hasResults && !task.isLoadingDetail) {
+      loadTaskDetail(task);
+    }
+  }, [task.isSaved, task.params.detectionResults, task.isLoadingDetail, loadTaskDetail, task]);
+
+  if (!task) return null;
+
   const hasClusterResult = task.params.clusterResultId && task.params.clusterResult;
   const hasImageDir = task.params.imageDir.trim();
   const canStartDetection = hasClusterResult && hasImageDir;
   const detectionStarted = task.params.detectionStarted === true;
   const detectionResults = task.params.detectionResults || [];
+  const recentResults = task.params.recentResults || [];
+  const displayResults = detectionResults.length > 0 ? detectionResults : recentResults;
+  
   const currentResult =
-    detectionResults.length > 0
-      ? detectionResults[detectionResults.length - 1]
+    displayResults.length > 0
+      ? displayResults[displayResults.length - 1]
       : null;
   const detectionTotal =
     task.params.detectionTotal && task.params.detectionTotal > 0
       ? task.params.detectionTotal
       : detectionResults.length;
+  
+  const processedCount = task.params.detectionCurrentIndex || detectionResults.length;
 
   // 还未开始检测：展示配置页面
   if (!detectionStarted) {
@@ -109,10 +113,19 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                 label: `${item.task_name} (${new Date(item.created_at).toLocaleString()})`,
                 clusterResult: item.clusterResult,
               }))}
-              onChange={(value, option: any) => {
-                onUpdateTaskParams(task.id, {
+              onChange={async (value, option: any) => {
+                // 如果 option 中没有 clusterResult (懒加载)，则去加载
+                let clusterResult = option.clusterResult;
+                if (!clusterResult) {
+                   const detail = await loadClusterResultDetail(value);
+                   if (detail) {
+                     clusterResult = detail;
+                   }
+                }
+                
+                updateTaskParams(task.id, {
                   clusterResultId: value,
-                  clusterResult: option.clusterResult,
+                  clusterResult: clusterResult,
                 });
               }}
             />
@@ -125,7 +138,7 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                 size="large"
                 value={task.params.imageDir}
                 onChange={(e) => {
-                  onUpdateTaskParams(task.id, { imageDir: e.target.value });
+                  updateTaskParams(task.id, { imageDir: e.target.value });
                 }}
               />
             </div>
@@ -146,7 +159,7 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                 precision={2}
                 value={task.params.maxScale ?? 1.1}
                 onChange={(value) => {
-                  onUpdateTaskParams(task.id, { maxScale: value ?? 1.1 });
+                  updateTaskParams(task.id, { maxScale: value ?? 1.1 });
                 }}
               />
             </div>
@@ -260,7 +273,7 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
       >
         <Tabs
           activeKey={detectionViewKey}
-          onChange={(key) => onDetectionViewKeyChange(key as 'overview' | 'list' | 'statistics')}
+          onChange={(key) => setDetectionViewKey(key as 'overview' | 'list' | 'statistics')}
           destroyInactiveTabPane={true}
           animated={false}
           tabBarStyle={{ margin: 0, padding: '0 24px' }}
@@ -292,7 +305,7 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                     savingDetectionTaskId === task.id
                   }
                   loading={savingDetectionTaskId === task.id}
-                  onClick={() => onSaveDetectionResult(task)}
+                  onClick={() => handleSaveDetectionResult(task)}
                 >
                   保存结果
                 </Button>
@@ -305,14 +318,14 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                   allowClear
                   style={{ width: 200 }}
                   value={searchText}
-                  onChange={(e) => onSearchTextChange(e.target.value)}
+                  onChange={(e) => setSearchText(e.target.value)}
                 />
                 <Select
                   placeholder="筛选分类"
                   allowClear
                   style={{ width: 120 }}
                   value={filterClusterId}
-                  onChange={onFilterClusterIdChange}
+                  onChange={setFilterClusterId}
                 >
                   {task.params.clusterResult?.clusters &&
                     Object.keys(task.params.clusterResult.clusters).map((clusterId) => (
@@ -333,7 +346,8 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                 <div style={{ height: '100%', overflow: 'auto' }}>
                   <DetectionOverview
                     taskStatus={task.status}
-                    detectionResults={detectionResults}
+                    processedCount={processedCount}
+                    recentResults={displayResults}
                     detectionTotal={detectionTotal}
                     clusterResult={task.params.clusterResult!}
                     currentResult={currentResult}
@@ -352,8 +366,17 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                     taskStatus={task.status}
                     searchText={searchText}
                     filterClusterId={filterClusterId}
-                    onSearchTextChange={onSearchTextChange}
-                    onFilterClusterIdChange={onFilterClusterIdChange}
+                    taskId={task.id}
+                    taskDbId={task.dbId}
+                    isSaved={task.isSaved}
+                    // Since DetectionList will now handle fetching in server mode, 
+                    // we don't strictly need these change handlers if they are only for client state,
+                    // but DetectionList uses them to update parent state for consistency?
+                    // Actually, if DetectionList handles server fetching internally,
+                    // parent searchText is still used for the input value.
+                    // So we keep passing them.
+                    onSearchTextChange={setSearchText}
+                    onFilterClusterIdChange={setFilterClusterId}
                   />
                 </div>
               ),
@@ -367,6 +390,8 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                   <DetectionStatistics
                     detectionResults={detectionResults}
                     clusterResult={task.params.clusterResult!}
+                    statistics={task.params.statistics}
+                    detectionTotal={detectionTotal}
                   />
                 </div>
               ),

@@ -30,7 +30,7 @@ export const useDetection = () => {
     clusterResult: ClusterResult,
     onProgress?: (index: number, total: number, current: DetectionResult) => void,
     maxScale: number = 1.1
-  ): Promise<DetectionResult[] | null> => {
+  ): Promise<{ results: DetectionResult[]; reason: 'completed' | 'cancelled' } | null> => {
     return new Promise((resolve, reject) => {
       if (!imageDir.trim()) {
         message.error('请输入待检测图片目录路径');
@@ -85,8 +85,10 @@ export const useDetection = () => {
 
             // 实时更新结果列表
             resultsRef.current = [...resultsRef.current, result];
-            setResults(resultsRef.current);
-            setCurrentImageIndex(index);
+            // 优化：不再每次都更新 results 状态，只在结束时返回。
+            // 避免高频渲染导致卡顿，UI更新完全依赖 onProgress 回调的批处理。
+            // setResults(resultsRef.current); 
+            // setCurrentImageIndex(index);
 
             // 调用进度回调
             if (onProgress) {
@@ -99,14 +101,14 @@ export const useDetection = () => {
             setCurrentImageIndex(resultsRef.current.length - 1);
             message.success(`检测完成！共检测 ${data.total} 张图片，成功归类 ${data.classified} 张`);
             ws.close();
-            resolve([...resultsRef.current]);
+            resolve({ results: [...resultsRef.current], reason: 'completed' });
           } else if (data.type === 'cancelled') {
             // 检测被取消
             isFinishedRef.current = true;
             setLoading(false);
             message.info(`检测已取消，已处理 ${data.processed}/${data.total} 张图片`);
             ws.close();
-            resolve([...resultsRef.current]);
+            resolve({ results: [...resultsRef.current], reason: 'cancelled' });
           } else if (data.type === 'error') {
             // 检测出错
             isFinishedRef.current = true;

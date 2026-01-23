@@ -6,12 +6,13 @@ LAB颜色值计算服务API
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel
 import os
 import glob
@@ -29,6 +30,20 @@ app = FastAPI(
     description="接收图片，计算中心区域的LAB颜色值，支持颜色聚类",
     version="1.0.0"
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    import json
+    print(f"[ERROR] Request Validation Error: {exc.errors()}")
+    try:
+        body = await request.json()
+        # print(f"[ERROR] Body: {json.dumps(body, ensure_ascii=False)[:1000]}...") # Print first 1000 chars
+    except:
+        pass
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
 
 # 初始化 SQLite 数据库（如果不存在则创建）
 init_db()
@@ -495,6 +510,8 @@ async def cluster_images(request: ClusterRequest):
             linkage='average'
         )
         
+        print(f"聚类完成，生成的类别ID: {list(clusters.keys())}")
+        
         # 计算类间距离
         inter_cluster_stats = calculate_inter_cluster_distance(clusters)
         
@@ -556,6 +573,8 @@ class SaveClusterRequest(BaseModel):
     result: dict
     task_name: str = ""
     task_id: str = ""
+    class Config:
+        extra = "ignore"
 
 
 @app.post("/api/save-cluster-result")
@@ -606,6 +625,11 @@ class SaveDetectionRequest(BaseModel):
     max_scale: float = 1.1
     task_name: str = ""
     task_id: str = ""
+    cluster_result: Optional[dict] = None
+    cluster_result_id: Optional[Union[str, int]] = None
+    # 允许接收任何额外字段
+    class Config:
+        extra = "ignore"
 
 
 @app.post("/api/save-detection-result")
@@ -618,12 +642,36 @@ async def save_detection_result(request: SaveDetectionRequest):
       - 仅在有有效结果时调用
     """
     try:
+      # 计算检测结果的统计分布，以便后续不需要加载所有图片就能展示统计图表
+      statistics = {}
+      if request.cluster_result and 'clusters' in request.cluster_result:
+          # 初始化统计字典
+          for cluster_id in request.cluster_result['clusters']:
+              statistics[cluster_id] = 0
+          statistics['-1'] = 0 # 未归类
+          
+          # 统计数量
+          for res in request.results:
+              cid = str(res.get('matched_cluster_id', -1)) if res.get('matched_cluster_id') is not None else '-1'
+              if cid in statistics:
+                  statistics[cid] += 1
+              else:
+                  statistics[cid] = 1 # 防御性编程
+
+      # 截取最新的部分结果作为预览，以便概览页显示
+      # 取最后10条
+      recent_results = request.results[-10:] if request.results else []
+
       payload = {
           "image_dir": request.image_dir,
           "total": request.total,
           "classified": request.classified,
-          "results": request.results,
+          # "results": request.results, # 移除海量结果列表
+          "recent_results": recent_results, # 保存少量预览数据
+          "statistics": statistics, # 保存预计算的统计数据
           "max_scale": request.max_scale,
+          "cluster_result": request.cluster_result,
+          "cluster_result_id": request.cluster_result_id,
       }
 
       record_id = insert_detection_result(
@@ -634,6 +682,12 @@ async def save_detection_result(request: SaveDetectionRequest):
           task_name=request.task_name,
           task_id=request.task_id,
       )
+      
+      # 批量插入图片记录到 task_images 表
+      from utils.db import insert_task_images_batch, get_connection
+      if request.results:
+          with get_connection() as conn:
+              insert_task_images_batch(conn, record_id, 'detect', request.results)
 
       return {
           "success": True,
@@ -644,6 +698,7 @@ async def save_detection_result(request: SaveDetectionRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[ERROR] 保存检测结果失败: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"保存检测结果时发生错误: {str(e)}"
@@ -653,7 +708,7 @@ async def save_detection_result(request: SaveDetectionRequest):
 @app.get("/api/saved-cluster-results")
 async def get_saved_cluster_results():
     """
-    获取所有已保存的聚类结果列表。
+    获取所有已保存的聚类结果列表（仅元数据，不含详细结果）。
     """
     try:
         from utils.db import get_all_cluster_results
@@ -672,7 +727,7 @@ async def get_saved_cluster_results():
 @app.get("/api/saved-detection-results")
 async def get_saved_detection_results():
     """
-    获取所有已保存的检测结果列表。
+    获取所有已保存的检测结果列表（仅元数据，不含详细结果）。
     """
     try:
         from utils.db import get_all_detection_results
@@ -685,6 +740,92 @@ async def get_saved_detection_results():
         raise HTTPException(
             status_code=500,
             detail=f"获取检测结果时发生错误: {str(e)}"
+        )
+
+
+@app.get("/api/result-detail/{type}/{id}")
+async def get_result_detail(type: str, id: int):
+    """
+    获取指定结果的详细信息（payload_json）。
+    按需加载大文件数据。
+    
+    参数:
+        type: "cluster" 或 "detect"
+        id: 数据库记录ID
+    """
+    try:
+        if type == "cluster":
+            from utils.db import get_cluster_result_payload
+            payload_json = get_cluster_result_payload(id)
+        elif type == "detect":
+            from utils.db import get_detection_result_payload
+            payload_json = get_detection_result_payload(id)
+        else:
+            raise HTTPException(status_code=400, detail="未知的任务类型")
+            
+        if payload_json:
+            return {
+                "success": True,
+                "data": json.loads(payload_json)
+            }
+        else:
+             raise HTTPException(status_code=404, detail="未找到结果数据")
+             
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取结果详情时发生错误: {str(e)}"
+        )
+
+
+@app.get("/api/task-images/{type}/{id}")
+async def get_task_images_api(
+    type: str, 
+    id: int, 
+    page: int = 1, 
+    pageSize: int = 20, 
+    search: str = "",
+    clusterId: Optional[int] = Query(None, description="筛选分类ID，-1表示未归类")
+):
+    """
+    分页获取任务的图片列表
+    
+    参数:
+        type: "cluster" 或 "detect"
+        id: 数据库记录ID
+        page: 页码，从1开始
+        pageSize: 每页数量
+        search: 文件名搜索关键词
+        clusterId: 筛选分类ID
+    """
+    try:
+        from utils.db import get_task_images
+        
+        # 验证任务类型
+        if type not in ["cluster", "detect"]:
+            raise HTTPException(status_code=400, detail="未知的任务类型")
+            
+        result = get_task_images(
+            task_db_id=id,
+            task_type=type,
+            page=page,
+            page_size=pageSize,
+            search=search,
+            cluster_id=clusterId
+        )
+        
+        return {
+            "success": True,
+            "data": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取图片列表时发生错误: {str(e)}"
         )
 
 

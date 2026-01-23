@@ -66,11 +66,14 @@ export interface Task {
     detectionResults?: DetectionResult[];  // 检测结果列表
     detectionTotal?: number; // 待检测总数
     detectionCurrentIndex?: number; // 当前进度序号（1-based）
+    statistics?: Record<string, number>; // 预计算的统计信息 {cluster_id: count}
+    recentResults?: DetectionResult[]; // 预览用的最近结果
   };
   result?: ClusterResult;
   errorMessage?: string;
   isSaved?: boolean;  // 是否已保存到数据库
   dbId?: number;      // 数据库记录ID
+  isLoadingDetail?: boolean; // 是否正在加载详情
 }
 
 // Tab 相关类型

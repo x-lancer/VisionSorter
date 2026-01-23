@@ -5,17 +5,21 @@ import { Task, TaskType, TaskStatus, ClusterResult, DetectionResult } from '../t
 import { API_BASE_URL } from '../constants';
 import { useCluster } from './useCluster';
 import { useDetection } from './useDetection';
+import { useTaskStore } from '../store/useTaskStore';
 
 export const useTasks = () => {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [savedClusterResults, setSavedClusterResults] = useState<Array<{
-    id: number;
-    task_name: string;
-    created_at: string;
-    clusterResult: ClusterResult;
-  }>>([]);
-  const [activeResultTab, setActiveResultTab] = useState<string>('statistics');
-  const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
+  // 从 Store 获取状态和 Action
+  const { 
+    tasks, 
+    savedClusterResults, 
+    setTasks, 
+    setSavedClusterResults,
+    addTask,
+    updateTask,
+    updateTaskParams: updateParamsInStore,
+    deleteTask: removeTaskFromStore
+  } = useTaskStore();
+
   const [activeDetectionTaskId, setActiveDetectionTaskId] = useState<string | null>(null);
   const [detectionViewKey, setDetectionViewKey] = useState<'overview' | 'list' | 'statistics'>('overview');
   const [savingDetectionTaskId, setSavingDetectionTaskId] = useState<string | null>(null);
@@ -44,18 +48,23 @@ export const useTasks = () => {
             imageDir: item.image_dir,
             nClusters: item.n_clusters,
           },
-          result: item.payload_json ? JSON.parse(item.payload_json) : undefined,
+          result: undefined, // 列表页不加载详情
           isSaved: true,
           dbId: item.id,
         }));
         
-        // 保存聚类结果列表供检测任务选择
+        // 保存聚类结果列表（仅元数据）供检测任务选择
+        // 注意：Dropdown 选择时需要详情数据，所以我们需要在选中时加载，
+        // 或者这里保留一些基本信息？
+        // 其实 savedClusterResults 里的 clusterResult 字段之前存的是整个 payload。
+        // 现在我们需要将其设为 null，并在选中时加载，或者加载时就去请求？
+        // 考虑到下拉框数量可能也多，我们仅存储元数据，选中时异步加载。
         const clusterResultsList = response.data.data.map((item: any) => ({
           id: item.id,
           task_name: item.task_name || `聚类任务-${item.id}`,
           created_at: item.created_at,
-          clusterResult: item.payload_json ? JSON.parse(item.payload_json) : null,
-        })).filter((item: any) => item.clusterResult !== null);
+          clusterResult: null, // 暂无详情
+        }));
         setSavedClusterResults(clusterResultsList);
       }
 
@@ -64,7 +73,7 @@ export const useTasks = () => {
       let detectionTasks: Task[] = [];
       if (detectionResponse.data.success && detectionResponse.data.data) {
         detectionTasks = detectionResponse.data.data.map((item: any) => {
-          const payload = item.payload_json ? JSON.parse(item.payload_json) : {};
+          // 列表接口不再返回 payload_json，所以无法预先解析 params
           return {
             id: item.task_id || `saved_detect_${item.id}`,
             name: item.task_name || `历史检测任务-${item.id}`,
@@ -74,11 +83,12 @@ export const useTasks = () => {
             params: {
               imageDir: item.image_dir,
               nClusters: 0,
+              // 以下字段将在打开详情时加载
               clusterResultId: undefined,
               clusterResult: undefined,
-              maxScale: payload.max_scale || 1.1,
+              maxScale: 1.1,
               detectionStarted: true,
-              detectionResults: payload.results || [],
+              detectionResults: [],
               detectionTotal: item.total_images,
               detectionCurrentIndex: item.total_images,
             },
@@ -89,7 +99,7 @@ export const useTasks = () => {
         });
       }
       
-      // 合并任务列表（展示已保存的聚类和检测任务）
+      // 合并任务列表
       setTasks((prev) => {
         const existingIds = new Set(prev.map((t) => t.id));
         const newTasks = [...clusterTasks, ...detectionTasks].filter((t) => !existingIds.has(t.id));
@@ -99,6 +109,62 @@ export const useTasks = () => {
     } catch (error) {
       console.error('加载历史结果失败:', error);
     }
+  }, [setTasks, setSavedClusterResults]);
+
+  // 加载任务详情（按需）
+  const loadTaskDetail = useCallback(async (task: Task) => {
+    if (!task.isSaved || !task.dbId) return;
+    
+    // 如果已经有数据了，跳过（简单的缓存机制）
+    if (task.type === 'cluster' && task.result) return;
+    if (task.type === 'detect' && task.params.detectionResults && task.params.detectionResults.length > 0) return;
+
+    try {
+      updateTask(task.id, { isLoadingDetail: true } as any); // 假设 Task 类型有这个字段，或者我们扩展一下
+      
+      const response = await axios.get(`${API_BASE_URL}/api/result-detail/${task.type}/${task.dbId}`);
+      if (response.data.success && response.data.data) {
+        const payload = response.data.data;
+        
+        if (task.type === 'cluster') {
+          updateTask(task.id, { 
+            result: payload,
+            isLoadingDetail: false 
+          } as any);
+        } else {
+          updateTask(task.id, {
+            params: {
+              ...task.params,
+              clusterResultId: payload.cluster_result_id,
+              clusterResult: payload.cluster_result,
+              maxScale: payload.max_scale || 1.1,
+              detectionResults: payload.results || [],
+              statistics: payload.statistics,
+              recentResults: payload.recent_results,
+            },
+            isLoadingDetail: false
+          } as any);
+        }
+      }
+    } catch (error) {
+      console.error('加载任务详情失败:', error);
+      message.error('加载任务详情失败');
+      updateTask(task.id, { isLoadingDetail: false } as any);
+    }
+  }, [updateTask]);
+  
+  // 加载聚类结果详情（用于检测任务选择下拉框）
+  const loadClusterResultDetail = useCallback(async (dbId: number) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/result-detail/cluster/${dbId}`);
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+    } catch (error) {
+      console.error('加载聚类详情失败:', error);
+      message.error('加载聚类详情失败');
+    }
+    return null;
   }, []);
 
   // 创建新任务
@@ -116,50 +182,31 @@ export const useTasks = () => {
         ? { imageDir: '', nClusters: 5 }
         : { imageDir: '', nClusters: 5, maxScale: 1.1 }, // 检测任务的params会在选择聚类结果后更新
     };
-    setTasks((prev) => [...prev, newTask]);
+    addTask(newTask);
     return newTask;
-  }, [tasks.length]);
+  }, [tasks.length, addTask]);
 
   // 开始聚类
   const onStart = useCallback(async (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.type !== 'cluster') return;
 
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId ? { ...t, status: 'running' as TaskStatus } : t,
-      ),
-    );
+    updateTask(taskId, { status: 'running' });
 
     try {
       const res = await handleCluster(task.params.imageDir, task.params.nClusters);
       if (res) {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId
-              ? { ...t, result: res, status: 'completed' as TaskStatus }
-              : t,
-          ),
-        );
+        updateTask(taskId, { result: res, status: 'completed' });
       } else {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId
-              ? { ...t, status: 'pending' as TaskStatus }
-              : t,
-          ),
-        );
+        updateTask(taskId, { status: 'pending' });
       }
     } catch (error: any) {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? { ...t, status: 'error' as TaskStatus, errorMessage: error.message || '执行出错' }
-            : t,
-        ),
-      );
+      updateTask(taskId, { 
+        status: 'error', 
+        errorMessage: error.message || '执行出错' 
+      });
     }
-  }, [tasks, handleCluster]);
+  }, [tasks, handleCluster, updateTask]);
 
   // 开始检测
   const onStartDetection = useCallback(async (taskId: string) => {
@@ -173,113 +220,111 @@ export const useTasks = () => {
     }
 
     // 标记检测已开始
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId
-          ? {
-              ...t,
-              status: 'running' as TaskStatus,
-              params: {
-                ...t.params,
-                detectionStarted: true,
-                detectionResults: [], // 重置检测结果
-                detectionTotal: undefined,
-                detectionCurrentIndex: undefined,
-              },
-            }
-          : t,
-      ),
-    );
+    updateTask(taskId, {
+      status: 'running',
+      params: {
+        ...task.params,
+        detectionStarted: true,
+        detectionResults: [], // 重置检测结果
+        detectionTotal: undefined,
+        detectionCurrentIndex: undefined,
+      },
+    });
     setActiveDetectionTaskId(taskId);
 
     try {
+      // 批处理缓冲区配置
+      let resultBuffer: DetectionResult[] = [];
+      let lastUpdateTime = Date.now();
+      const BATCH_SIZE = 20; // 每20条更新一次 UI
+      const TIME_THRESHOLD = 300; // 或每300ms更新一次 UI
+
       // 使用 WebSocket 实时检测
-      await handleDetection(
+      const result = await handleDetection(
         task.params.imageDir,
         task.params.clusterResult!,
         (index, total, current) => {
-          // 实时更新任务状态和结果
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === taskId
-                ? {
-                    ...t,
-                    params: {
-                      ...t.params,
-                      detectionResults: [...(t.params.detectionResults || []), current as any],
-                      detectionTotal: total,
-                      detectionCurrentIndex: index + 1,
-                    },
+          // 将结果加入缓冲区
+          resultBuffer.push(current);
+          
+          const now = Date.now();
+          // 检查是否达到刷新条件
+          if (resultBuffer.length >= BATCH_SIZE || (now - lastUpdateTime > TIME_THRESHOLD)) {
+            const bufferToFlush = [...resultBuffer];
+            resultBuffer = []; // 清空缓冲区
+            lastUpdateTime = now;
+
+            // 批量更新 State
+            setTasks((prev) => 
+              prev.map(t => {
+                if (t.id !== taskId) return t;
+                return {
+                  ...t,
+                  params: {
+                    ...t.params,
+                    detectionResults: [...(t.params.detectionResults || []), ...bufferToFlush],
+                    detectionTotal: total,
+                    detectionCurrentIndex: index + 1,
                   }
-                : t,
-            ),
-          );
+                };
+              })
+            );
+          }
         },
         task.params.maxScale || 1.1
       );
 
-      // 检测完成（结果已在 onProgress 中更新）
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                status: 'completed' as TaskStatus,
+      // 检测结束后处理
+      if (result) {
+        const { results: finalResults, reason } = result;
+        setTasks((prev) => 
+          prev.map(t => {
+            if (t.id !== taskId) return t;
+            return {
+              ...t,
+              // 如果是正常完成，则更新状态为 completed
+              // 如果是 cancelled (暂停或取消)，则保留当前状态（paused 或 pending）
+              status: reason === 'completed' ? 'completed' : t.status,
+              params: {
+                ...t.params,
+                detectionResults: finalResults,
+                detectionTotal: finalResults.length,
+                detectionCurrentIndex: finalResults.length,
               }
-            : t,
-        ),
-      );
+            };
+          })
+        );
+      } else {
+         // 返回 null 表示启动失败（如参数校验不通过），重置为 pending
+         updateTask(taskId, { status: 'pending' });
+      }
+
       setActiveDetectionTaskId(null);
     } catch (error: any) {
       // 检测出错或被取消
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                status: 'error' as TaskStatus,
-                errorMessage: error.message || '检测过程中发生错误',
-              }
-            : t,
-        ),
-      );
+      updateTask(taskId, { 
+        status: 'error', 
+        errorMessage: error.message || '检测过程中发生错误' 
+      });
       setActiveDetectionTaskId(null);
     }
-  }, [tasks, handleDetection]);
+  }, [tasks, handleDetection, updateTask, setTasks]);
 
   // 取消检测
   const onCancelDetection = useCallback((taskId: string) => {
     cancelDetection();
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId
-          ? {
-              ...t,
-              status: 'pending' as TaskStatus,
-            }
-          : t,
-      ),
-    );
+    updateTask(taskId, { status: 'pending' });
     setActiveDetectionTaskId(null);
-  }, [cancelDetection]);
+  }, [cancelDetection, updateTask]);
 
   // 暂停检测
   const onPauseDetection = useCallback((taskId: string) => {
     if (activeDetectionTaskId === taskId) {
       cancelDetection();
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                status: 'paused' as TaskStatus,
-              }
-            : t,
-        ),
-      );
+      updateTask(taskId, { status: 'paused' });
       setActiveDetectionTaskId(null);
     }
-  }, [activeDetectionTaskId, cancelDetection]);
+  }, [activeDetectionTaskId, cancelDetection, updateTask]);
 
   // 继续检测
   const onResumeDetection = useCallback((taskId: string) => {
@@ -288,43 +333,64 @@ export const useTasks = () => {
 
   // 更新任务参数
   const updateTaskParams = useCallback((taskId: string, params: Partial<Task['params']>) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId ? { ...t, params: { ...t.params, ...params } } : t
-      )
-    );
-  }, []);
+    updateParamsInStore(taskId, params);
+  }, [updateParamsInStore]);
 
   // 更新任务名称
   const updateTaskName = useCallback((taskId: string, newName: string) => {
-    setTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, name: newName } : task))
-    );
-  }, []);
+    updateTask(taskId, { name: newName });
+  }, [updateTask]);
 
   // 保存聚类结果
   const handleSaveResult = useCallback(async (task: Task) => {
-    await saveCurrentResult(task.name, task.id);
-    // 标记任务为已保存
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, isSaved: true } : t))
-    );
-    // 重新加载聚类结果列表，以便检测任务可以选择最新保存的结果
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/saved-cluster-results`);
-      if (response.data.success && response.data.data) {
-        const clusterResultsList = response.data.data.map((item: any) => ({
-          id: item.id,
-          task_name: item.task_name || `聚类任务-${item.id}`,
-          created_at: item.created_at,
-          clusterResult: item.payload_json ? JSON.parse(item.payload_json) : null,
-        })).filter((item: any) => item.clusterResult !== null);
-        setSavedClusterResults(clusterResultsList);
+    const saveResponse = await saveCurrentResult(task.name, task.id);
+    if (saveResponse && saveResponse.success) {
+      // 1. 标记任务为已保存，记录 dbId
+      // 2. 释放内存：清空 result 中的 images 列表，强迫 UI 走 Server Mode
+      setTasks((prev) => 
+        prev.map(t => {
+          if (t.id !== task.id) return t;
+          
+          // 创建一个瘦身的 result 对象
+          const slimResult = t.result ? {
+            ...t.result,
+            images: [], // 清空图片列表
+            clusters: t.result.clusters, // 保留 cluster 统计信息（注意：clusters.{id}.images 暂未清空，如果很大也建议清空）
+          } : undefined;
+
+          // 如果 clusters.{id}.image_paths 也包含全量数据，也应该清理
+          if (slimResult && slimResult.clusters) {
+             Object.keys(slimResult.clusters).forEach(cid => {
+               slimResult.clusters[cid].image_paths = []; // 清理
+             });
+          }
+
+          return {
+            ...t,
+            isSaved: true,
+            dbId: saveResponse.id,
+            result: slimResult
+          };
+        })
+      );
+      
+      // 重新加载聚类结果列表
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/saved-cluster-results`);
+        if (response.data.success && response.data.data) {
+          const clusterResultsList = response.data.data.map((item: any) => ({
+            id: item.id,
+            task_name: item.task_name || `聚类任务-${item.id}`,
+            created_at: item.created_at,
+            clusterResult: null, // 暂无详情
+          }));
+          setSavedClusterResults(clusterResultsList);
+        }
+      } catch (error) {
+        console.error('刷新聚类结果列表失败:', error);
       }
-    } catch (error) {
-      console.error('刷新聚类结果列表失败:', error);
     }
-  }, [saveCurrentResult]);
+  }, [saveCurrentResult, setTasks, setSavedClusterResults]);
 
   // 保存检测结果
   const handleSaveDetectionResult = useCallback(async (task: Task) => {
@@ -350,19 +416,36 @@ export const useTasks = () => {
         max_scale: task.params.maxScale || 1.1,
         task_name: task.name,
         task_id: task.id,
+        cluster_result: task.params.clusterResult,
+        cluster_result_id: task.params.clusterResultId,
       });
+      
       if (response.data && response.data.success) {
         message.success('检测结果已保存');
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === task.id
-              ? {
-                  ...t,
-                  isSaved: true,
-                }
-              : t,
-          ),
+        
+        // 保存成功后，释放内存并切换到 Server Mode
+        setTasks((prev) => 
+          prev.map(t => {
+            if (t.id !== task.id) return t;
+            return {
+              ...t,
+              isSaved: true,
+              dbId: response.data.id,
+              params: {
+                ...t.params,
+                detectionResults: [], // 清空检测结果列表
+                recentResults: t.params.detectionResults?.slice(-10), // 保留预览
+                // 保留 statistics 如果有的话，或者后端返回？
+                // 刚才后端的 save 接口没返回 payload。
+                // 我们可以简单保留前端计算好的 statistics，或者不保留，DetectionStatistics 会根据空数据渲染空。
+                // 更好的做法是：保留前端已有的 statistics。
+                // 但 DetectionStatistics 的逻辑是：如果有 statistics prop 就用，没有就用 detectionResults 计算。
+                // 所以我们应该把当前的统计存入 params.statistics
+              }
+            };
+          })
         );
+        
       } else {
         message.error(response.data?.message || '保存检测结果失败');
       }
@@ -372,7 +455,7 @@ export const useTasks = () => {
     } finally {
       setSavingDetectionTaskId(null);
     }
-  }, []);
+  }, [setTasks]);
 
   // 删除任务
   const handleDeleteTask = useCallback(async (taskId: string) => {
@@ -398,23 +481,13 @@ export const useTasks = () => {
       }
     }
 
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
-  }, [tasks]);
-
-  // 处理聚类选择（从统计页面）
-  const handleClusterSelectFromStatistics = useCallback((clusterId: number) => {
-    setActiveResultTab('clusters');
-    setActiveClusterId(String(clusterId));
-  }, []);
+    removeTaskFromStore(taskId);
+  }, [tasks, removeTaskFromStore]);
 
   return {
     tasks,
-    setTasks,
+    setTasks, // 依然导出 setTasks 以兼容旧代码，但底层是 store
     savedClusterResults,
-    activeResultTab,
-    setActiveResultTab,
-    activeClusterId,
-    setActiveClusterId,
     activeDetectionTaskId,
     detectionViewKey,
     setDetectionViewKey,
@@ -440,6 +513,7 @@ export const useTasks = () => {
     handleSaveResult,
     handleSaveDetectionResult,
     handleDeleteTask,
-    handleClusterSelectFromStatistics,
+    loadTaskDetail,
+    loadClusterResultDetail,
   };
 };

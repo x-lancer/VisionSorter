@@ -1,6 +1,6 @@
 {
   "name": "color-clustering-frontend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "private": true,
   "dependencies": {
@@ -12,7 +12,8 @@
     "axios": "^1.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

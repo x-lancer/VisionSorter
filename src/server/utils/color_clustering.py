@@ -127,9 +127,15 @@ def cluster_images_by_color_de2000(
     
     # 统计每个类别的信息
     clusters = {}
+    print(f"开始统计聚类信息 (n_clusters={n_clusters})")
     for cluster_id in range(n_clusters):
         cluster_indices = np.where(labels == cluster_id)[0]
         cluster_lab_vectors = lab_vectors[cluster_indices]
+        
+        # 类别ID从1开始索引
+        display_cluster_id = cluster_id + 1
+        print(f"  - 处理类别 {display_cluster_id} (内部索引 {cluster_id}), 样本数: {len(cluster_indices)}")
+
         
         # 计算平均LAB值
         lab_mean = np.mean(cluster_lab_vectors, axis=0).tolist()

@@ -1,20 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Layout, Typography, Tabs, Card, Dropdown, ConfigProvider, theme, Input } from 'antd';
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
 import { PushpinFilled } from '@ant-design/icons';
 import TaskList from './components/TaskList';
-import { DraggableTabNode } from './components/DraggableTabNode';
+import { DraggableTabs } from './components/DraggableTabs';
 import { AppHeader } from './components/AppHeader';
 import { AppSider } from './components/AppSider';
 import { ClusterTaskView } from './components/ClusterTaskView';
@@ -56,49 +44,10 @@ const App: React.FC = () => {
   // 任务管理
   const {
     tasks,
-    savedClusterResults,
-    activeResultTab,
-    setActiveResultTab,
-    activeClusterId,
-    setActiveClusterId,
-    detectionViewKey,
-    setDetectionViewKey,
-    savingDetectionTaskId,
-    searchText,
-    setSearchText,
-    filterClusterId,
-    setFilterClusterId,
-    filterStatus,
-    setFilterStatus,
-    loading,
-    saving,
     loadSavedResults,
     createTask,
-    onStart,
-    onStartDetection,
-    onCancelDetection,
-    onPauseDetection,
-    onResumeDetection,
-    updateTaskParams,
-    updateTaskName,
-    handleSaveResult,
-    handleSaveDetectionResult,
     handleDeleteTask,
-    handleClusterSelectFromStatistics,
   } = useTasks();
-
-  // 拖拽排序相关
-  const sensor = useSensor(PointerSensor, { activationConstraint: { distance: 10 } });
-  const sensors = useSensors(sensor);
-
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    if (over && active.id !== over.id) {
-      const activeIndex = tabs.findIndex((tab) => tab.key === active.id);
-      const overIndex = tabs.findIndex((tab) => tab.key === over.id);
-      const newTabs = arrayMove(tabs, activeIndex, overIndex);
-      setTabs(newTabs);
-    }
-  };
 
   // 组件挂载时初始化
   useEffect(() => {
@@ -121,7 +70,14 @@ const App: React.FC = () => {
     }
   };
 
-  // 处理任务重命名
+  // 处理任务重命名 (现在不需要在这里更新 Store 了，useTabs 里的 Input 会更新 Tab Label，但 Task Name 的更新需要处理)
+  // useTabs 的 handleTaskNameChange 只是更新了 Tab 的 label
+  // 我们需要在那里调用 updateTaskName
+  
+  // 实际上，之前的逻辑是 useTabs 处理 Tab UI，App.tsx 协调 Task Name 更新
+  // 我们需要在 App.tsx 中保留更新 Task Name 的逻辑
+  const { updateTaskName } = useTasks();
+
   const handleTaskRename = (taskId: string, newName: string) => {
     updateTaskName(taskId, newName);
     updateTabLabel(taskId, newName);
@@ -159,71 +115,53 @@ const App: React.FC = () => {
         );
 
       case 'task': {
-        // 先从 tasks 中查找，如果找不到，使用 Tab 中保存的初始任务数据
-        let task = tab.taskId ? tasks.find((t) => t.id === tab.taskId) : undefined;
-        if (!task && tab.initialTask) {
-          task = tab.initialTask;
-        }
-        if (!task) {
+        if (!tab.taskId) {
           return (
-            <div
-              style={{
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Text type="secondary">任务 ID 丢失</Text>
+            </div>
+          );
+        }
+
+        // 检查任务是否存在
+        const taskExists = tasks.some(t => t.id === tab.taskId);
+        if (!taskExists && !tab.initialTask) {
+           return (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Text type="secondary">任务不存在或已被删除</Text>
+            </div>
+          );
+        }
+        
+        // 即使任务不存在，如果是个刚创建的任务，store 更新可能滞后? 不会，store 是同步的。
+        // 但是初始渲染时可能为空。
+        
+        // 这里的判断主要是为了确定显示哪个 View
+        // 为了确定类型，我们可能需要先获取 task
+        // 但是 renderTabContent 是在 map 中调用的，尽量减少 find 操作
+        // 我们可以依赖 TabItem 中的信息吗？ TabItem 目前没有 type 区分 cluster/detect (除了 tab.type='task')
+        // 我们需要去 tasks 里查。
+        const task = tasks.find(t => t.id === tab.taskId) || tab.initialTask;
+        
+        if (!task) {
+             return (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Text type="secondary">任务不存在</Text>
             </div>
           );
         }
 
         if (task.type === 'cluster') {
-          return (
-            <ClusterTaskView
-              task={task}
-              loading={loading && activeTabKey === `task_${task.id}`}
-              activeResultTab={activeResultTab}
-              activeClusterId={activeClusterId}
-              saving={saving}
-              onUpdateTaskParams={updateTaskParams}
-              onStart={onStart}
-              onSaveResult={handleSaveResult}
-              onClusterSelectFromStatistics={handleClusterSelectFromStatistics}
-              onActiveResultTabChange={setActiveResultTab}
-              onActiveClusterIdChange={setActiveClusterId}
-            />
-          );
+          return <ClusterTaskView taskId={tab.taskId!} />;
         } else {
-          return (
-            <DetectionTaskView
-              task={task}
-              savedClusterResults={savedClusterResults}
-              detectionViewKey={detectionViewKey}
-              searchText={searchText}
-              filterClusterId={filterClusterId}
-              filterStatus={filterStatus}
-              savingDetectionTaskId={savingDetectionTaskId}
-              onUpdateTaskParams={updateTaskParams}
-              onStartDetection={onStartDetection}
-              onCancelDetection={onCancelDetection}
-              onPauseDetection={onPauseDetection}
-              onResumeDetection={onResumeDetection}
-              onSaveDetectionResult={handleSaveDetectionResult}
-              onDetectionViewKeyChange={setDetectionViewKey}
-              onSearchTextChange={setSearchText}
-              onFilterClusterIdChange={setFilterClusterId}
-              onFilterStatusChange={setFilterStatus}
-            />
-          );
+          return <DetectionTaskView taskId={tab.taskId!} />;
         }
       }
 
       default:
         return null;
     }
-  }, [tasks, loading, activeTabKey, activeResultTab, activeClusterId, saving, savingDetectionTaskId, savedClusterResults, detectionViewKey, searchText, filterClusterId, filterStatus, updateTaskParams, onStart, handleSaveResult, handleClusterSelectFromStatistics, setActiveResultTab, setActiveClusterId, onStartDetection, onCancelDetection, onPauseDetection, onResumeDetection, handleSaveDetectionResult, setDetectionViewKey, setSearchText, setFilterClusterId, setFilterStatus, handleOpenTaskDetail, handleDeleteTask]);
+  }, [tasks, handleDeleteTask, handleOpenTaskDetail]);
 
   // 使用 useMemo 优化性能，确保在 tasks 或 tabs 更新时重新创建
   const tabItems = useMemo(() => {
@@ -370,48 +308,15 @@ const App: React.FC = () => {
                   </Text>
                 </Card>
               ) : (
-                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-                  <SortableContext items={tabs.map((t) => t.key)} strategy={horizontalListSortingStrategy}>
-                    <div className="root-tabs" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <Tabs
-                        type="editable-card"
-                        activeKey={activeTabKey || undefined}
-                        onChange={(key) => setActiveTabKey(key)}
-                        onEdit={handleTabEdit}
-                        destroyInactiveTabPane={true}
-                        animated={false}
-                        addIcon={
-                          <Dropdown
-                            trigger={['click']}
-                            menu={{
-                              items: [
-                                { key: 'cluster', label: '聚类任务' },
-                                { key: 'detect', label: '检测任务' },
-                              ],
-                              onClick: ({ key }) => {
-                                handleCreateTask(key as TaskType);
-                              },
-                            }}
-                          >
-                            <span style={{ display: 'inline-block', width: 20, textAlign: 'center' }}>+</span>
-                          </Dropdown>
-                        }
-                        renderTabBar={(tabBarProps, DefaultTabBar) => (
-                          <DefaultTabBar {...tabBarProps}>
-                            {(node) => (
-                              <DraggableTabNode key={node.key} data-node-key={node.key as string}>
-                                {node}
-                              </DraggableTabNode>
-                            )}
-                          </DefaultTabBar>
-                        )}
-                        items={tabItems}
-                        style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-                        tabBarStyle={{ marginBottom: 0 }}
-                      />
-                    </div>
-                  </SortableContext>
-                </DndContext>
+                <DraggableTabs
+                  tabs={tabs}
+                  activeTabKey={activeTabKey}
+                  onTabsChange={setTabs}
+                  onActiveTabChange={setActiveTabKey}
+                  onTabEdit={handleTabEdit}
+                  onAddClick={handleCreateTask}
+                  items={tabItems}
+                />
               )}
             </Content>
           </Layout>

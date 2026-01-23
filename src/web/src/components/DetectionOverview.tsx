@@ -7,7 +7,8 @@ const { Text } = Typography;
 
 interface DetectionOverviewProps {
   taskStatus: string;
-  detectionResults: DetectionResult[];
+  processedCount: number;
+  recentResults: DetectionResult[];
   detectionTotal: number;
   clusterResult: ClusterResult;
   currentResult: DetectionResult | null;
@@ -15,17 +16,18 @@ interface DetectionOverviewProps {
 
 export const DetectionOverview: React.FC<DetectionOverviewProps> = ({
   taskStatus,
-  detectionResults,
+  processedCount,
+  recentResults,
   detectionTotal,
   clusterResult,
   currentResult,
 }) => {
   const progressPercent =
     detectionTotal > 0
-      ? Math.round((detectionResults.length / detectionTotal) * 100)
+      ? Math.round((processedCount / detectionTotal) * 100)
       : 0;
 
-  const validTimes = detectionResults
+  const validTimes = recentResults
     .map(r => r.elapsed_time)
     .filter((t): t is number => t !== undefined);
   const avgTime = validTimes.length > 0
@@ -58,12 +60,12 @@ export const DetectionOverview: React.FC<DetectionOverviewProps> = ({
           }}
         >
           <span>
-            当前进度：已检测 {detectionResults.length} / {detectionTotal || '—'} 张
+            当前进度：已检测 {processedCount} / {detectionTotal || '—'} 张
           </span>
           <span>
             {taskStatus === 'running'
               ? '检测进行中...'
-              : detectionResults.length > 0
+              : processedCount > 0
               ? '检测已完成'
               : '等待开始检测'}
           </span>
@@ -222,7 +224,7 @@ export const DetectionOverview: React.FC<DetectionOverviewProps> = ({
 
         {/* 右侧：统计表格 */}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-        {detectionResults.length > 0 && (
+        {recentResults.length > 0 && (
           <Table
             size="small"
             pagination={false}
