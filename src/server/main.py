@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from typing import Optional, List, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import os
 import glob
 from utils.imgtool import bgr_to_lab, extract_center_region, extract_lab_from_mask
@@ -573,8 +573,7 @@ class SaveClusterRequest(BaseModel):
     result: dict
     task_name: str = ""
     task_id: str = ""
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 @app.post("/api/save-cluster-result")
@@ -628,8 +627,7 @@ class SaveDetectionRequest(BaseModel):
     cluster_result: Optional[dict] = None
     cluster_result_id: Optional[Union[str, int]] = None
     # 允许接收任何额外字段
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 @app.post("/api/save-detection-result")

@@ -117,7 +117,16 @@ export const useTasks = () => {
     
     // 如果已经有数据了，跳过（简单的缓存机制）
     if (task.type === 'cluster' && task.result) return;
-    if (task.type === 'detect' && task.params.detectionResults && task.params.detectionResults.length > 0) return;
+    if (task.type === 'detect') {
+      // 新版 detect 保存时不会把海量 results 写进 payload_json（只存 recent_results/statistics），
+      // 全量列表走 /api/task-images/detect/{id} 分页读取。
+      // 因此这里不能只用 detectionResults 判断“是否已加载”，否则会导致反复请求 /api/result-detail。
+      const hasClientResults = (task.params.detectionResults?.length ?? 0) > 0;
+      const hasPreview = (task.params.recentResults?.length ?? 0) > 0;
+      const hasStatistics = task.params.statistics != null;
+      const hasClusterInfo = task.params.clusterResultId != null && task.params.clusterResult != null;
+      if (hasClientResults || hasPreview || hasStatistics || hasClusterInfo) return;
+    }
 
     try {
       updateTask(task.id, { isLoadingDetail: true } as any); // 假设 Task 类型有这个字段，或者我们扩展一下

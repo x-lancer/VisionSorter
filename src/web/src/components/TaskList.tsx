@@ -37,6 +37,13 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, onViewTask, onDeleteTask }) 
     ? tasks 
     : tasks.filter(task => task.type === filterType);
 
+  const formatTime = (value: string) => {
+    // 兼容 ISO 字符串（如 2026-01-23T07:21:18Z）以及本地字符串
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString();
+  };
+
   const getStatusTag = (status: TaskStatus, isSaved?: boolean) => {
     const statusConfig: Record<TaskStatus, { color: string; text: string }> = {
       pending: { color: 'default', text: '待执行' },
@@ -95,6 +102,11 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, onViewTask, onDeleteTask }) 
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
+      render: (value: string) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {formatTime(value)}
+        </Text>
+      ),
     },
     {
       title: '操作',

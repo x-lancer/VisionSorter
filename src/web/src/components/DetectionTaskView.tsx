@@ -5,6 +5,7 @@ import { labToRgbColor } from '../utils/colorUtils';
 import { DetectionOverview } from './DetectionOverview';
 import { DetectionList } from './DetectionList';
 import { DetectionStatistics } from './DetectionStatistics';
+import { DetectionClassDetails } from './DetectionClassDetails';
 import { useTaskStore } from '../store/useTaskStore';
 import { useTasks } from '../hooks/useTasks';
 
@@ -21,7 +22,7 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
   const { token } = theme.useToken();
   
   // 1. 本地 UI 状态
-  const [detectionViewKey, setDetectionViewKey] = useState<'overview' | 'list' | 'statistics'>('overview');
+  const [detectionViewKey, setDetectionViewKey] = useState<'overview' | 'list' | 'classes' | 'statistics'>('overview');
   const [searchText, setSearchText] = useState<string>('');
   const [filterClusterId, setFilterClusterId] = useState<number | null>(null);
   
@@ -44,12 +45,27 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
 
   // 组件挂载时检查是否需要加载详情
   React.useEffect(() => {
-    // 如果是已保存的任务，且没有检测结果，且没有正在加载，则加载详情
-    const hasResults = task.params.detectionResults && task.params.detectionResults.length > 0;
-    if (task.isSaved && !hasResults && !task.isLoadingDetail) {
+    if (!task) return;
+    // 如果是已保存的任务，且还没加载过详情（recent_results/statistics/clusterResult），且没有正在加载，则加载详情
+    const hasDetail =
+      task.params.clusterResult != null ||
+      task.params.clusterResultId != null ||
+      task.params.statistics != null ||
+      (task.params.recentResults?.length ?? 0) > 0;
+
+    if (task.isSaved && !hasDetail && !task.isLoadingDetail) {
       loadTaskDetail(task);
     }
-  }, [task.isSaved, task.params.detectionResults, task.isLoadingDetail, loadTaskDetail, task]);
+  }, [
+    task?.id,
+    task?.isSaved,
+    task?.isLoadingDetail,
+    task?.params.clusterResult,
+    task?.params.clusterResultId,
+    task?.params.statistics,
+    task?.params.recentResults,
+    loadTaskDetail,
+  ]);
 
   if (!task) return null;
 
@@ -273,7 +289,7 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
       >
         <Tabs
           activeKey={detectionViewKey}
-          onChange={(key) => setDetectionViewKey(key as 'overview' | 'list' | 'statistics')}
+          onChange={(key) => setDetectionViewKey(key as 'overview' | 'list' | 'classes' | 'statistics')}
           destroyInactiveTabPane={true}
           animated={false}
           tabBarStyle={{ margin: 0, padding: '0 24px' }}
@@ -378,6 +394,31 @@ export const DetectionTaskView: React.FC<DetectionTaskViewProps> = ({
                     onSearchTextChange={setSearchText}
                     onFilterClusterIdChange={setFilterClusterId}
                   />
+                </div>
+              ),
+            },
+            {
+              key: 'classes',
+              label: '分类详情',
+              disabled: !task.isSaved || !task.dbId,
+              children: (
+                <div style={{ height: '100%', overflow: 'hidden' }}>
+                  {task.isSaved && task.dbId ? (
+                    <DetectionClassDetails
+                      taskDbId={task.dbId}
+                      clusterResult={task.params.clusterResult}
+                      statistics={task.params.statistics}
+                    />
+                  ) : (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ marginBottom: 8, fontSize: 14 }}>请先保存检测结果</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>
+                          分类详情需要从数据库分页读取图片列表（每页 20 张）
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ),
             },

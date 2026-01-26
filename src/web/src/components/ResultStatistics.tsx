@@ -102,8 +102,8 @@ const ResultStatistics: React.FC<ResultStatisticsProps> = ({ result, onClusterSe
         style={{ marginTop: 24 }}
         bodyStyle={{ padding: 16 }}
         title="分类预览"
+        extra={<Text type="secondary">点击可跳转查看对应分类详情</Text>}
       >
-        <Text type="secondary">点击可跳转查看对应分类详情</Text>
         <List
           style={{ marginTop: 16 }}
           dataSource={clusters}

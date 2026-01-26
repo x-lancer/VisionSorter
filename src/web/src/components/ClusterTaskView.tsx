@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Tabs, Button, theme } from 'antd';
+import { Card, Tabs, theme } from 'antd';
 import { Task } from '../types';
 import ParameterConfig from './ParameterConfig';
 import LoadingSpinner from './LoadingSpinner';
@@ -20,6 +20,7 @@ export const ClusterTaskView: React.FC<ClusterTaskViewProps> = ({
   const { token } = theme.useToken();
   const [activeResultTab, setActiveResultTab] = useState<string>('statistics');
   const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
+  const [paramsCollapsed, setParamsCollapsed] = useState(false);
 
   // 从 Store 获取任务数据
   const task = useTaskStore((state) => state.tasks.find((t) => t.id === taskId));
@@ -111,26 +112,39 @@ export const ClusterTaskView: React.FC<ClusterTaskViewProps> = ({
       overflow: 'hidden',
       backgroundColor: token.colorBgContainer
     }}>
-      <div style={{
-        flex: '0 0 320px',
-        width: 320,
-        display: 'flex',
-        flexDirection: 'column',
-        flexShrink: 0,
-        padding: '24px 0 24px 24px'
-      }}>
-        <ParameterConfig
-          imageDir={task.params.imageDir}
-          nClusters={task.params.nClusters}
-          loading={loading}
-          onImageDirChange={(value) => {
-            updateTaskParams(task.id, { imageDir: value });
+      {/* 左侧参数区：固定左边距，避免收起/展开时“贴边距离”跳动 */}
+      <div
+        style={{
+          flexShrink: 0,
+          padding: '24px 0 24px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div
+          style={{
+            width: paramsCollapsed ? 56 : 320,
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            transition: 'width 220ms ease',
           }}
-          onNClustersChange={(value) => {
-            updateTaskParams(task.id, { nClusters: value });
-          }}
-          onStart={() => onStart(task.id)}
-        />
+        >
+          <ParameterConfig
+            imageDir={task.params.imageDir}
+            nClusters={task.params.nClusters}
+            loading={loading}
+            onImageDirChange={(value) => {
+              updateTaskParams(task.id, { imageDir: value });
+            }}
+            onNClustersChange={(value) => {
+              updateTaskParams(task.id, { nClusters: value });
+            }}
+            onStart={() => onStart(task.id)}
+            collapsed={paramsCollapsed}
+            onToggleCollapse={() => setParamsCollapsed((v) => !v)}
+          />
+        </div>
       </div>
       <div style={{
         flex: 1,
@@ -138,7 +152,8 @@ export const ClusterTaskView: React.FC<ClusterTaskViewProps> = ({
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        padding: 24
+        // 缩小左右两张卡片之间的间距（主要来源是右侧区域的左内边距）
+        padding: '24px 24px 24px 12px'
       }}>
         {loading || task.isLoadingDetail ? (
           <LoadingSpinner />
